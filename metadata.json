@@ -1,0 +1,6 @@
+{
+  "name": "Klarhaus — Haushaltsbuch",
+  "description": "Minimalistische Haushalts-Web-App mit getrennten Profilen, gemeinsamer Übersicht, Fixkosten, Jahresabschluss und JSON-Backup für pCloud.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
