@@ -1,18 +1,61 @@
-# Haushaltsoberfläche (Haushaltsbuch)
+# VTO - Haushaltsübersicht (Haushaltsbuch)
 
-Eine schlanke, datenschutzfreundliche Web-App zur Erfassung und Auswertung von Haushaltseinnahmen und -ausgaben für Einzelpersonen oder zwei getrennte Profile inklusive gemeinsamer Gesamtansicht.
+Eine moderne, datenschutzfreundliche Web-Anwendung zur intuitiven Erfassung, Verwaltung und Auswertung von Einnahmen, Ausgaben und Fixkosten. Die App unterstützt sowohl die Einzelnutzung als auch die getrennte Führung von zwei unabhängigen Profilen inklusive einer automatischen, gemeinsamen Gesamtansicht.
 
-## Features
+Live-Version: [https://7xcr4b4kqr-art.github.io/Haushaltsbuch/](https://7xcr4b4kqr-art.github.io/Haushaltsbuch/)
 
-- **Datenschutz & Autarkie:** Alle Daten verbleiben lokal im Browser (`localStorage`). Es werden keine Daten an externe Server übertragen.
-- **Profilverwaltung:** Frei editierbare Profilnamen und Profilbilder.
-- **Import / Export:** Sicherung und Einlesen der Finanzdaten (Buchungen, Fixposten, Salden) über eine universelle JSON-Datei (z. B. zur geräteübergreifenden Synchronisation über eigene Cloud-Ordner).
-- **Visuelle Saldo-Ampel:** Über sichtbare Farb-Kennzeichnung (Grün bei Überschuss, Rot bei Unterdeckung) auf Monats- und Jahresbasis.
-- **Kategorisierung:** Getrennte Übersicht für Einnahmen, Erstattungen, Ausgaben und Fixposten.
+---
 
-## Nutzung / Start
+## 🔒 Datenschutz & Datensicherheitskonzept (Local-First)
 
-### Variante A: Direkt im Browser nutzen
-1. Repository herunterladen oder klonen:
+Bei Finanzdaten steht die Privatsphäre an erster Stelle. Diese Anwendung basiert konsequent auf dem **Local-First-Prinzip**:
+
+1. **Vollständige Anonymität & 0 % Server-Transfer:**
+   - Es gibt kein Backend, keine Datenbank auf fremden Servern und keine Cloud-Anbindung.
+   - Es werden **keinerlei Finanzdaten, persönliche Angaben oder Datenströme** an Dritte oder externe Server übertragen.
+
+2. **Lokale Datenspeicherung (`localStorage`):**
+   - Alle erfassten Buchungen, Fixkosten und Einstellungen verbleiben ausschließlich im Speicher des Browsers auf Deinem Endgerät.
+
+3. **Höchste Datenhoheit via JSON-Import/Export:**
+   - Deine Finanzdaten gehören Dir: Über die Funktionen **„Daten sichern“** und **„Daten laden“** exportierst und importierst Du Deine Daten als unverschlüsselte, lesbare `.json`-Datei.
+   - **Multi-Geräte-Synchronisation:** Um die Daten zwischen verschiedenen Geräten (z. B. Mac, PC, iPad) abzugleichen, speicherst Du die JSON-Datei einfach in Deinem bevorzugten privaten Cloud-Ordner (z. B. pCloud, iCloud, Google Drive, OneDrive) und lädst sie auf dem anderen Gerät wieder ein.
+
+4. **Geräte-spezifische Profilbilder:**
+   - Profilbilder werden zur Schonung der JSON-Dateigröße lokal im Browser gehalten, sodass der JSON-Export extrem schlank und schnell bleibt.
+
+---
+
+## ✨ Hauptfunktionen
+
+* **Frei anpassbare Profile:** Profilnamen lassen sich beliebig editieren und bleiben dauerhaft in der JSON-Datei sowie im lokalen Speicher erhalten.
+* **Getrennte & Gemeinsame Ansichten:**
+  * Einzelansichten pro Profil für persönliche Budgets.
+  * Automatisch aggregierte **Gemeinsam-Ansicht** für den Gesamthaushalt.
+* **Visuelle Saldo-Ampel:**
+  * Zentrale Netto-Saldo-Kachel auf Monats- und Jahresbasis.
+  * Dynamische Farbkodierung: **Grün** bei Überschuss (Einnahmen > Ausgaben), **Rot** bei Unterdeckung (Ausgaben > Einnahmen).
+* **Kategorisierung & Festposten:**
+  * Dynamische Trennung von Ausgaben (z. B. Essen, Mobilität, Freizeit) und Einnahmen (z. B. Gehalt, Erstattungen, Dividenden).
+  * Verwaltung von wiederkehrenden Fixkosten mit optionalem Enddatum.
+* **Vollständig Responsive UI:** Perfekt optimiert für Desktop-Browser, Tablets und Smartphones.
+
+---
+
+## 🚀 Schnellstart & Nutzung
+
+### Option A: Direkt im Browser nutzen (Empfohlen)
+Öffne einfach den folgenden Link in Deinem Browser:
+👉 **[Haushaltsbuch starten](https://7xcr4b4kqr-art.github.io/Haushaltsbuch/)**
+
+### Option B: Lokal ausführen
+Hinweis: Node.js 20.19 oder neuer erforderlich.
+
+1. Repository klonen, Abhängigkeiten installieren und Dev-Server starten:
    ```bash
-   git clone [https://github.com/7xcr4b4kqr-art/Haushaltsbuch.git](https://github.com/7xcr4b4kqr-art/Haushaltsbuch.git)
+   git clone https://github.com/7xcr4b4kqr-art/Haushaltsbuch.git
+   cd Haushaltsbuch
+   npm install
+   npm run dev
+   ```
+2. Anschließend im Browser öffnen: [http://localhost:3000](http://localhost:3000)
