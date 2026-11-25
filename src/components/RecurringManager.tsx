@@ -532,7 +532,7 @@ export const RecurringManager: React.FC<RecurringManagerProps> = ({
                         </td>
                         <td
                           className={`py-3 px-3 text-right font-mono font-medium tabular-nums whitespace-nowrap align-top ${
-                            isIncome ? 'text-[#2A6F4E]' : 'text-[#3D322C]'
+                            isIncome ? 'text-[#2A6F4E]' : 'text-[#B43C2E]'
                           }`}
                         >
                           {isIncome
