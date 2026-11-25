@@ -39,6 +39,15 @@ Bei Finanzdaten steht die Privatsphäre an erster Stelle. Diese Anwendung basier
   * Dynamische Trennung von Ausgaben (z. B. Essen, Mobilität, Freizeit) und Einnahmen (z. B. Gehalt, Erstattungen, Dividenden).
   * Verwaltung von wiederkehrenden Fixkosten mit optionalem Enddatum.
 * **Vollständig Responsive UI:** Perfekt optimiert für Desktop-Browser, Tablets und Smartphones.
+* **Money-Control-Import:**
+  * Auf der Startseite lässt sich ein CSV-Export aus Money Control einlesen.
+  * Du wählst das Zielprofil: Nur dieses Profil wird überschrieben, andere Profile bleiben unverändert. Vor dem Überschreiben zeigt Dir eine Rückfrage genau, was ersetzt wird.
+  * Umbuchungen zwischen Konten werden übersprungen, neue Kategorien werden ergänzt; Personen aus der Datei lassen sich gleichnamigen Profilen zuordnen.
+  * Die Datei wird ausschließlich in Deinem Browser gelesen, nichts wird übertragen.
+* **Suche & Auswertung:**
+  * Eigene Ansicht, die alle Monate und Jahre durchsucht – mit Filtern für Suchbegriff, Kategorie, Zeitraum und Art.
+  * Summenzeile mit Treffern, Einnahmen, Ausgaben und Saldo sowie die gewohnte Buchungsliste.
+  * Im Jahresabschluss führt Dich ein Klick auf eine Kategorie direkt zu deren Einzelbuchungen (mit Rücksprung); die Monatssuche verweist per Link auf die Suche über alle Monate.
 
 ---
 
@@ -59,3 +68,12 @@ Hinweis: Node.js 20.19 oder neuer erforderlich.
    npm run dev
    ```
 2. Anschließend im Browser öffnen: [http://localhost:3000](http://localhost:3000)
+
+---
+
+## 🗓️ Änderungen
+
+* **25.11.2026** – Neue Ansicht „Suche & Auswertung“ mit Klick auf Kategorien im Jahresabschluss.
+* **25.11.2026** – Import von Money-Control-CSV-Dateien mit Wahl des Zielprofils.
+* **22.11.2026** – Schriften werden lokal eingebunden, es werden keine Google-Fonts mehr geladen.
+* **22.11.2026** – Veröffentlichung über GitHub Pages.
