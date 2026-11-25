@@ -25,7 +25,7 @@ import {
 } from '../utils/pcloudSync';
 import {
   FIXED_EXPENSE_CATEGORIES,
-  FIXED_INCOME_CATEGORIES,
+  getIncomeCategories,
   validateAndNormalizeDatabase,
 } from '../utils/storage';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -754,10 +754,10 @@ export const BackupAndProfiles: React.FC<BackupAndProfilesProps> = ({
                 Einnahmen-Kategorien
               </h4>
               <p className="text-[11px] text-[#8C7D72] mb-3">
-                Fest definierte Kategorien für Einnahmen
+                Kategorien für Einnahmen
               </p>
               <ul className="divide-y divide-[#F0ECE2] border border-[#E5DFD3] rounded-xl overflow-hidden bg-white">
-                {FIXED_INCOME_CATEGORIES.map((cat) => (
+                {getIncomeCategories(db.categories).map((cat) => (
                   <li
                     key={cat}
                     className="flex items-center justify-between px-3 py-2 text-xs text-[#3D322C]"

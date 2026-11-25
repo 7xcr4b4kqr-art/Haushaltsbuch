@@ -62,6 +62,7 @@ import {
   createInitialDatabase,
   loadDatabase,
   saveDatabase,
+  saveDatabaseChecked,
   saveLocalAvatar,
   validateAndNormalizeDatabase,
 } from './utils/storage';
@@ -415,6 +416,39 @@ export default function App() {
     setDb(saved);
   };
 
+  // Money Control CSV import: persist locally first, then mirror to the linked folder
+  const handleImportMoneyControl = async (
+    nextDb: BudgetDatabase
+  ): Promise<
+    | { status: 'not-persisted' }
+    | { status: 'local-only' }
+    | { status: 'synced'; folderName: string }
+    | { status: 'sync-failed'; message: string }
+  > => {
+    const { db: saved, persisted } = saveDatabaseChecked(nextDb);
+    if (!persisted) {
+      return { status: 'not-persisted' };
+    }
+    setDb(saved);
+    if (!pcloudDirHandle) {
+      return { status: 'local-only' };
+    }
+    const res = await saveDatabaseToDirectory(pcloudDirHandle, saved);
+    if (res.status === 'saved') {
+      return { status: 'synced', folderName: res.folderName };
+    }
+    if (res.status === 'permission-denied') {
+      return {
+        status: 'sync-failed',
+        message: 'Schreibberechtigung für den verknüpften Ordner wurde verweigert.',
+      };
+    }
+    if (res.status === 'error') {
+      return { status: 'sync-failed', message: res.message };
+    }
+    return { status: 'local-only' };
+  };
+
   const handleLoadSampleData = () => {
     commitDb((prev) => buildSampleDatabase(prev.profiles));
   };
@@ -462,6 +496,7 @@ export default function App() {
         pcloudFolderName={pcloudDirHandle?.name ?? null}
         onSelectScope={handleSelectScope}
         onImportDatabase={handleImportDatabase}
+        onImportMoneyControl={handleImportMoneyControl}
         onUpdateProfileName={handleUpdateProfileName}
         onUpdateProfileAvatar={handleUpdateProfileAvatar}
         onLoadSampleData={handleLoadSampleData}

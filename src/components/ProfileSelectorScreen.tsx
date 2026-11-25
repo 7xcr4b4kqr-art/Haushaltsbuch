@@ -4,6 +4,7 @@ import {
   Camera,
   Check,
   Download,
+  FileSpreadsheet,
   FolderOpen,
   Pencil,
   Trash2,
@@ -21,13 +22,30 @@ import {
   isFileSystemAccessSupported,
 } from '../utils/pcloudSync';
 import { validateAndNormalizeDatabase } from '../utils/storage';
+import {
+  MoneyControlAffectedProfile,
+  MoneyControlImportError,
+  MoneyControlParseResult,
+  decodeCsvBytes,
+  parseMoneyControlCsv,
+} from '../utils/moneyControlImport';
+import { MoneyControlImportDialog } from './MoneyControlImportDialog';
 import { ProfileAvatar } from './ProfileAvatar';
+
+export type MoneyControlImportOutcome =
+  | { status: 'not-persisted' }
+  | { status: 'local-only' }
+  | { status: 'synced'; folderName: string }
+  | { status: 'sync-failed'; message: string };
 
 interface ProfileSelectorScreenProps {
   db: BudgetDatabase;
   pcloudFolderName: string | null;
   onSelectScope: (scope: ActiveScope) => void;
   onImportDatabase: (nextDb: BudgetDatabase) => void;
+  onImportMoneyControl: (
+    nextDb: BudgetDatabase
+  ) => Promise<MoneyControlImportOutcome>;
   onUpdateProfileName: (profileId: string, nextName: string) => void;
   onUpdateProfileAvatar: (profileId: string, avatarUrl?: string) => void;
   onLoadSampleData: () => void;
@@ -41,6 +59,7 @@ export const ProfileSelectorScreen: React.FC<ProfileSelectorScreenProps> = ({
   pcloudFolderName,
   onSelectScope,
   onImportDatabase,
+  onImportMoneyControl,
   onUpdateProfileName,
   onUpdateProfileAvatar,
   onLoadSampleData,
@@ -57,6 +76,14 @@ export const ProfileSelectorScreen: React.FC<ProfileSelectorScreenProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [exportDone, setExportDone] = useState<boolean>(false);
+
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvPending, setCsvPending] = useState<{
+    fileName: string;
+    parsed: MoneyControlParseResult;
+  } | null>(null);
+  const [csvBusy, setCsvBusy] = useState<boolean>(false);
+  const [csvDialogError, setCsvDialogError] = useState<string | null>(null);
 
   const hasAnyData =
     db.transactions.length > 0 || db.recurringItems.length > 0;
@@ -136,6 +163,72 @@ export const ProfileSelectorScreen: React.FC<ProfileSelectorScreenProps> = ({
       setImportError(res.message);
     } else if (res.connected) {
       setStatusMessage('Ordner verknüpft.');
+    }
+  };
+
+  const handleCsvClick = () => {
+    setImportError(null);
+    setStatusMessage(null);
+    csvInputRef.current?.click();
+  };
+
+  const handleCsvSelected = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (csvInputRef.current) csvInputRef.current.value = '';
+    if (!file) return;
+    setImportError(null);
+    setStatusMessage(null);
+    try {
+      const text = decodeCsvBytes(await file.arrayBuffer());
+      const parsed = parseMoneyControlCsv(text);
+      setCsvDialogError(null);
+      setCsvPending({ fileName: file.name, parsed });
+    } catch (err) {
+      setImportError(
+        err instanceof MoneyControlImportError
+          ? err.message
+          : 'Die CSV-Datei konnte nicht gelesen werden. Bitte prüfen Sie, ob es ein Money-Control-Export ist.'
+      );
+    }
+  };
+
+  const handleCsvConfirm = async (
+    nextDb: BudgetDatabase,
+    affected: MoneyControlAffectedProfile[]
+  ) => {
+    setCsvBusy(true);
+    setCsvDialogError(null);
+    try {
+      const outcome = await onImportMoneyControl(nextDb);
+      if (outcome.status === 'not-persisted') {
+        setCsvDialogError(
+          'Der Import konnte nicht im Browser gespeichert werden (Speicher voll oder privater Modus). Ihre bisherigen Daten sind unverändert.'
+        );
+        return;
+      }
+      const total = affected.reduce((sum, a) => sum + a.newTransactions, 0);
+      const perProfile = affected
+        .map((a) => `${a.profileName}: ${a.newTransactions.toLocaleString('de-DE')}`)
+        .join(', ');
+      let msg = `${total.toLocaleString('de-DE')} Buchungen importiert (${perProfile}).`;
+      if (outcome.status === 'synced') {
+        msg += ` Im Ordner „${outcome.folderName}“ gesichert.`;
+      }
+      setCsvPending(null);
+      setStatusMessage(msg);
+      if (outcome.status === 'sync-failed') {
+        setImportError(
+          `Lokal gespeichert, aber nicht im verknüpften Ordner: ${outcome.message} Bitte „Daten sichern“ nutzen.`
+        );
+      }
+    } catch {
+      setCsvDialogError(
+        'Beim Import ist ein unerwarteter Fehler aufgetreten. Ihre bisherigen Daten sind unverändert.'
+      );
+    } finally {
+      setCsvBusy(false);
     }
   };
 
@@ -431,6 +524,22 @@ export const ProfileSelectorScreen: React.FC<ProfileSelectorScreenProps> = ({
                 </button>
               )}
 
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => void handleCsvSelected(e)}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={handleCsvClick}
+                className="inline-flex items-center gap-2 text-sm font-medium text-[#FCFBF8] py-2.5 px-4 rounded-xl border border-[#2A6F4E] bg-[#2A6F4E] shadow-xs hover:bg-[#235C41] hover:border-[#235C41] transition-colors whitespace-nowrap shrink-0"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                Money Control CSV importieren
+              </button>
+
               {!hasAnyData && (
                 <button
                   type="button"
@@ -454,6 +563,20 @@ export const ProfileSelectorScreen: React.FC<ProfileSelectorScreenProps> = ({
           )}
         </div>
       </main>
+
+      {csvPending && (
+        <MoneyControlImportDialog
+          db={db}
+          fileName={csvPending.fileName}
+          parsed={csvPending.parsed}
+          busy={csvBusy}
+          error={csvDialogError}
+          onCancel={() => {
+            if (!csvBusy) setCsvPending(null);
+          }}
+          onConfirm={(nextDb, affected) => void handleCsvConfirm(nextDb, affected)}
+        />
+      )}
 
       <footer className="max-w-4xl w-full mx-auto text-xs text-[#6E6056]">
         Alle Daten, Profilnamen und Profilbilder bleiben lokal im Browser

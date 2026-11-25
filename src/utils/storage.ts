@@ -53,15 +53,12 @@ function normalizeCategoryName(name: string): string {
 }
 
 function ensureExpenseCategories(list: string[]): string[] {
+  // Keeps the stored order; required fixed categories are appended if missing.
   const result: string[] = [];
   const lowerSet = new Set<string>();
   const incomeLowerSet = new Set(
     FIXED_INCOME_CATEGORIES.map((c) => c.toLowerCase())
   );
-  for (const required of FIXED_EXPENSE_CATEGORIES) {
-    result.push(required);
-    lowerSet.add(required.toLowerCase());
-  }
   for (const item of list) {
     const normalized = normalizeCategoryName(item);
     if (
@@ -74,7 +71,36 @@ function ensureExpenseCategories(list: string[]): string[] {
     result.push(normalized);
     lowerSet.add(normalized.toLowerCase());
   }
+  for (const required of FIXED_EXPENSE_CATEGORIES) {
+    if (!lowerSet.has(required.toLowerCase())) {
+      result.push(required);
+      lowerSet.add(required.toLowerCase());
+    }
+  }
   return result;
+}
+
+function normalizeIncomeCategories(list: unknown): string[] {
+  if (!Array.isArray(list)) return [...FIXED_INCOME_CATEGORIES];
+  const result: string[] = [];
+  const lowerSet = new Set<string>();
+  for (const item of list) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim();
+    if (!trimmed || lowerSet.has(trimmed.toLowerCase())) continue;
+    result.push(trimmed);
+    lowerSet.add(trimmed.toLowerCase());
+  }
+  return result.length > 0 ? result : [...FIXED_INCOME_CATEGORIES];
+}
+
+/** Income categories offered in forms (stored list, falling back to the fixed defaults). */
+export function getIncomeCategories(categories: {
+  income?: readonly string[];
+}): string[] {
+  return categories.income && categories.income.length > 0
+    ? [...categories.income]
+    : [...FIXED_INCOME_CATEGORIES];
 }
 
 export function createInitialDatabase(): BudgetDatabase {
@@ -232,6 +258,31 @@ export function saveDatabase(db: BudgetDatabase): BudgetDatabase {
   return payload;
 }
 
+/**
+ * Like saveDatabase, but reports whether the data was actually written to
+ * localStorage (e.g. false when the storage quota is exceeded). On failure
+ * the previously stored data remains untouched.
+ */
+export function saveDatabaseChecked(db: BudgetDatabase): {
+  db: BudgetDatabase;
+  persisted: boolean;
+} {
+  const updatedAt = new Date().toISOString();
+  const normalizedProfiles = normalizeProfilesForPersistence(db.profiles);
+  const payload: BudgetDatabase = {
+    ...db,
+    profiles: normalizedProfiles,
+    updatedAt,
+  };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    return { db: payload, persisted: false };
+  }
+  syncLocalAvatarsFromProfiles(normalizedProfiles);
+  return { db: payload, persisted: true };
+}
+
 export function validateAndNormalizeDatabase(
   input: unknown
 ): BudgetDatabase | null {
@@ -356,7 +407,7 @@ export function validateAndNormalizeDatabase(
   const expenseCats = ensureExpenseCategories(
     rawExpenseCats.length > 0 ? rawExpenseCats : [...DEFAULT_CATEGORIES.expense]
   );
-  const incomeCats = [...FIXED_INCOME_CATEGORIES];
+  const incomeCats = normalizeIncomeCategories(rawCats?.income);
 
   return {
     version: 1,

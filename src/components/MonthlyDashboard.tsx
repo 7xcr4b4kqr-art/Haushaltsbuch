@@ -14,7 +14,7 @@ import {
   formatPercent,
   getTodayISO,
 } from '../utils/format';
-import { FIXED_INCOME_CATEGORIES } from '../utils/storage';
+import { getIncomeCategories } from '../utils/storage';
 import { NetBalanceCard } from './NetBalanceCard';
 import { ProfileAvatar } from './ProfileAvatar';
 
@@ -61,7 +61,7 @@ export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
   const [quickAmount, setQuickAmount] = useState<string>('');
   const [quickDate, setQuickDate] = useState<string>(defaultDateInMonth);
   const [quickCategory, setQuickCategory] = useState<string>(
-    db.categories.expense[0] ?? 'Essen/Trinken'
+    db.categories.expense[0] ?? ''
   );
   const [quickNote, setQuickNote] = useState<string>('');
   const [quickError, setQuickError] = useState<string | null>(null);
@@ -84,8 +84,8 @@ export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
     () =>
       quickType === 'expense'
         ? db.categories.expense
-        : [...FIXED_INCOME_CATEGORIES],
-    [quickType, db.categories.expense]
+        : getIncomeCategories(db.categories),
+    [quickType, db.categories]
   );
 
   React.useEffect(() => {
@@ -97,7 +97,9 @@ export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
   const handleQuickTypeSwitch = (next: EntryType) => {
     setQuickType(next);
     const list: string[] =
-      next === 'expense' ? db.categories.expense : [...FIXED_INCOME_CATEGORIES];
+      next === 'expense'
+        ? db.categories.expense
+        : getIncomeCategories(db.categories);
     if (!list.includes(quickCategory)) {
       setQuickCategory(list[0] ?? '');
     }
@@ -128,9 +130,9 @@ export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
 
     const finalCategory =
       effectiveType === 'income' &&
-      !(FIXED_INCOME_CATEGORIES as readonly string[]).includes(quickCategory)
-        ? FIXED_INCOME_CATEGORIES[0]
-        : quickCategory || activeCategoryOptions[0] || 'Essen/Trinken';
+      !getIncomeCategories(db.categories).includes(quickCategory)
+        ? getIncomeCategories(db.categories)[0] ?? 'Sonstiges'
+        : quickCategory || activeCategoryOptions[0] || 'Sonstiges';
 
     onQuickAddTransaction({
       profileId: scope === 'joint' ? quickProfileId : scope,

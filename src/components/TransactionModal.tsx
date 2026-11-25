@@ -7,7 +7,7 @@ import {
   UserProfile,
 } from '../types/budget';
 import { getTodayISO } from '../utils/format';
-import { FIXED_INCOME_CATEGORIES } from '../utils/storage';
+import { getIncomeCategories } from '../utils/storage';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -58,17 +58,17 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setAmountRaw(editingTransaction.amount.toFixed(2).replace('.', ','));
       setDate(editingTransaction.date);
       if (editingTransaction.type === 'income') {
-        const incomeList = FIXED_INCOME_CATEGORIES as readonly string[];
+        const incomeList = getIncomeCategories(categories);
         setCategory(
           incomeList.includes(editingTransaction.category)
             ? editingTransaction.category
-            : FIXED_INCOME_CATEGORIES[0]
+            : incomeList[0] ?? ''
         );
       } else {
         setCategory(
           categories.expense.includes(editingTransaction.category)
             ? editingTransaction.category
-            : categories.expense[0] ?? 'Essen/Trinken'
+            : categories.expense[0] ?? ''
         );
       }
       setNote(editingTransaction.note);
@@ -77,7 +77,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setProfileId(defaultProfileId);
       setAmountRaw('');
       setDate(defaultDate ?? getTodayISO());
-      setCategory(categories.expense[0] ?? 'Essen/Trinken');
+      setCategory(categories.expense[0] ?? '');
       setNote('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -86,14 +86,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   if (!isOpen) return null;
 
   const availableCategories: string[] =
-    type === 'expense' ? categories.expense : [...FIXED_INCOME_CATEGORIES];
+    type === 'expense' ? categories.expense : getIncomeCategories(categories);
 
   const handleTypeChange = (nextType: EntryType) => {
     setType(nextType);
     setShowNewCat(false);
     setNewCatName('');
     const list: string[] =
-      nextType === 'expense' ? categories.expense : [...FIXED_INCOME_CATEGORIES];
+      nextType === 'expense'
+        ? categories.expense
+        : getIncomeCategories(categories);
     if (!list.includes(category)) {
       setCategory(list[0] ?? '');
     }
@@ -136,8 +138,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
     const finalCategory =
       effectiveType === 'income' &&
-      !(FIXED_INCOME_CATEGORIES as readonly string[]).includes(category.trim())
-        ? FIXED_INCOME_CATEGORIES[0]
+      !getIncomeCategories(categories).includes(category.trim())
+        ? getIncomeCategories(categories)[0] ?? category.trim()
         : category.trim();
 
     onSave(

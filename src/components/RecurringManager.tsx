@@ -8,7 +8,7 @@ import {
 } from '../types/budget';
 import { isRecurringApplicableInMonth } from '../utils/calculations';
 import { formatCurrency, getCurrentYearMonth } from '../utils/format';
-import { FIXED_INCOME_CATEGORIES } from '../utils/storage';
+import { getIncomeCategories } from '../utils/storage';
 
 interface RecurringManagerProps {
   db: BudgetDatabase;
@@ -108,17 +108,15 @@ export const RecurringManager: React.FC<RecurringManagerProps> = ({
     setTitle(item.title);
     setAmountRaw(item.amount.toFixed(2).replace('.', ','));
     if (item.type === 'income') {
-      const incomeList = FIXED_INCOME_CATEGORIES as readonly string[];
+      const incomeList = getIncomeCategories(db.categories);
       setCategory(
-        incomeList.includes(item.category)
-          ? item.category
-          : FIXED_INCOME_CATEGORIES[0]
+        incomeList.includes(item.category) ? item.category : incomeList[0] ?? ''
       );
     } else {
       setCategory(
         db.categories.expense.includes(item.category)
           ? item.category
-          : db.categories.expense[0] ?? 'Essen/Trinken'
+          : db.categories.expense[0] ?? ''
       );
     }
     setDayOfMonth(item.dayOfMonth);
@@ -133,7 +131,7 @@ export const RecurringManager: React.FC<RecurringManagerProps> = ({
     const list: string[] =
       nextType === 'expense'
         ? db.categories.expense
-        : [...FIXED_INCOME_CATEGORIES];
+        : getIncomeCategories(db.categories);
     if (!list.includes(category)) {
       setCategory(list[0] ?? '');
     }
@@ -186,7 +184,7 @@ export const RecurringManager: React.FC<RecurringManagerProps> = ({
   };
 
   const availableCategories: string[] =
-    type === 'expense' ? db.categories.expense : [...FIXED_INCOME_CATEGORIES];
+    type === 'expense' ? db.categories.expense : getIncomeCategories(db.categories);
 
   return (
     <div className="space-y-6">
