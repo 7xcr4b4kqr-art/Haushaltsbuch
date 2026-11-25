@@ -73,6 +73,7 @@ Hinweis: Node.js 20.19 oder neuer erforderlich.
 
 ## 🗓️ Änderungen
 
+* **25.11.2026** – Ausgaben-Beträge werden in den Buchungslisten rot dargestellt, Einnahmen grün.
 * **25.11.2026** – Neue Ansicht „Suche & Auswertung“ mit Klick auf Kategorien im Jahresabschluss.
 * **25.11.2026** – Import von Money-Control-CSV-Dateien mit Wahl des Zielprofils.
 * **22.11.2026** – Schriften werden lokal eingebunden, es werden keine Google-Fonts mehr geladen.
