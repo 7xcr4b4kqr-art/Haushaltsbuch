@@ -2,7 +2,24 @@ export type EntryType = 'expense' | 'income';
 
 export type ActiveScope = string | 'joint';
 
-export type ViewMode = 'dashboard' | 'recurring' | 'annual' | 'backup';
+export type ViewMode = 'dashboard' | 'recurring' | 'annual' | 'search' | 'backup';
+
+export type SearchPeriod =
+  | { kind: 'all' }
+  | { kind: 'year'; year: number }
+  | { kind: 'month'; yearMonth: string }; // YYYY-MM
+
+export type SearchOrigin = 'annual' | 'monthly' | null;
+
+export type SearchSort = 'date-desc' | 'date-asc' | 'amount-desc';
+
+export interface SearchFilters {
+  query: string;
+  category: string; // 'all' = alle Kategorien
+  type: 'all' | EntryType;
+  period: SearchPeriod;
+  sort: SearchSort;
+}
 
 export interface UserProfile {
   id: string;

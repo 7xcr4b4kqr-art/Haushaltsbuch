@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Pencil, Plus, Search, Trash2, Repeat } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import {
   ActiveScope,
   BudgetDatabase,
@@ -9,12 +9,12 @@ import {
 } from '../types/budget';
 import {
   formatCurrency,
-  formatDateDE,
   formatMonthYearDE,
   formatPercent,
   getTodayISO,
 } from '../utils/format';
 import { getIncomeCategories } from '../utils/storage';
+import { LedgerTable } from './LedgerTable';
 import { NetBalanceCard } from './NetBalanceCard';
 import { ProfileAvatar } from './ProfileAvatar';
 
@@ -31,6 +31,7 @@ interface MonthlyDashboardProps {
   onNavigateToRecurring: () => void;
   onOpenNewModal: () => void;
   onLoadSampleData: () => void;
+  onSearchAllMonths?: (query: string) => void;
 }
 
 export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
@@ -46,6 +47,7 @@ export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
   onNavigateToRecurring,
   onOpenNewModal,
   onLoadSampleData,
+  onSearchAllMonths,
 }) => {
   const defaultProfileId =
     scope === 'joint' ? (db.profiles[0]?.id ?? 'profil_1') : scope;
@@ -78,7 +80,6 @@ export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
   const [typeFilter, setTypeFilter] = useState<'all' | 'expense' | 'income'>('all');
   const [kindFilter, setKindFilter] = useState<'all' | 'variable' | 'recurring'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const activeCategoryOptions: string[] = useMemo(
     () =>
@@ -469,7 +470,7 @@ export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
                 <Search className="w-4 h-4 text-[#8C7D72] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Nach Notiz, Kategorie oder Profil suchen..."
+                  placeholder="Im Monat suchen …"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-3 py-1.5 text-sm bg-white border border-[#DFD7C8] rounded-xl text-[#3D322C] focus:outline-none focus:border-[#3D322C]"
@@ -491,6 +492,18 @@ export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
                 </select>
               </div>
             </div>
+
+            {onSearchAllMonths && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => onSearchAllMonths(searchQuery.trim())}
+                  className="text-xs font-medium text-[#6E6056] hover:text-[#3D322C] underline underline-offset-2 decoration-[#D4CCB9] hover:decoration-[#3D322C] transition-colors"
+                >
+                  In allen Monaten suchen →
+                </button>
+              </div>
+            )}
           </div>
 
           {filteredLedger.length === 0 ? (
@@ -525,135 +538,14 @@ export const MonthlyDashboard: React.FC<MonthlyDashboardProps> = ({
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[#EAE4D7] text-xs font-medium text-[#6E6056] bg-[#F5F2EB]/60">
-                    <th className="py-2.5 pl-5 pr-3 whitespace-nowrap">Datum</th>
-                    <th className="py-2.5 px-3">Beschreibung & Kategorie</th>
-                    <th className="py-2.5 px-3 text-right whitespace-nowrap">
-                      Betrag
-                    </th>
-                    <th className="py-2.5 pl-3 pr-5 text-right whitespace-nowrap w-24">
-                      Aktion
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F0ECE2] text-sm">
-                  {filteredLedger.map((entry) => {
-                    const rawTx =
-                      entry.kind === 'variable'
-                        ? txMap.get(entry.sourceId)
-                        : undefined;
-                    const isIncome = entry.type === 'income';
-
-                    return (
-                      <tr
-                        key={entry.id}
-                        className="hover:bg-[#F5F2EB]/45 transition-colors"
-                      >
-                        <td className="py-2.5 pl-5 pr-3 font-mono text-xs text-[#6E6056] tabular-nums whitespace-nowrap align-top">
-                          {formatDateDE(entry.date)}
-                        </td>
-                        <td className="py-2.5 px-3 align-top">
-                          <div className="font-medium text-[#3D322C] leading-snug">
-                            {entry.title}
-                          </div>
-                          <div className="text-xs text-[#8C7D72] mt-0.5 flex flex-wrap items-center gap-x-1.5">
-                            <span>{entry.category}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>
-                              {entry.kind === 'recurring'
-                                ? 'Fixposten'
-                                : 'Variabel'}
-                            </span>
-                            {scope === 'joint' && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="font-medium text-[#4A3B32]">
-                                  {entry.profileName}
-                                </span>
-                              </>
-                            )}
-                            {entry.kind === 'recurring' && entry.note && (
-                              <>
-                                <span aria-hidden="true">·</span>
-                                <span className="truncate max-w-xs">
-                                  {entry.note}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td
-                          className={`py-2.5 px-3 text-right font-mono text-sm font-medium tabular-nums whitespace-nowrap align-top ${
-                            isIncome ? 'text-[#2A6F4E]' : 'text-[#3D322C]'
-                          }`}
-                        >
-                          {isIncome
-                            ? formatCurrency(entry.amount, true)
-                            : `-${formatCurrency(entry.amount)}`}
-                        </td>
-                        <td className="py-2.5 pl-3 pr-5 text-right whitespace-nowrap align-top">
-                          {entry.kind === 'variable' && rawTx ? (
-                            pendingDeleteId === rawTx.id ? (
-                              <div className="inline-flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onDeleteTransaction(rawTx.id);
-                                    setPendingDeleteId(null);
-                                  }}
-                                  className="text-xs font-medium text-[#B43C2E] hover:underline underline-offset-2"
-                                >
-                                  Löschen
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPendingDeleteId(null)}
-                                  className="text-xs text-[#6E6056] hover:text-[#3D322C]"
-                                >
-                                  Nein
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="inline-flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => onEditTransaction(rawTx)}
-                                  className="p-1.5 rounded-lg text-[#8C7D72] hover:text-[#3D322C] hover:bg-[#EFEAE0] transition-colors"
-                                  aria-label="Buchung bearbeiten"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPendingDeleteId(rawTx.id)}
-                                  className="p-1.5 rounded-lg text-[#8C7D72] hover:text-[#B43C2E] hover:bg-[#B43C2E]/10 transition-colors"
-                                  aria-label="Buchung löschen"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={onNavigateToRecurring}
-                              title="Im Bereich Fixposten verwalten"
-                              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-[#6E6056] hover:text-[#3D322C] hover:bg-[#EFEAE0] rounded-lg transition-colors"
-                            >
-                              <Repeat className="w-3 h-3" />
-                              Fix
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <LedgerTable
+              entries={filteredLedger}
+              scope={scope}
+              txMap={txMap}
+              onEditTransaction={onEditTransaction}
+              onDeleteTransaction={onDeleteTransaction}
+              onNavigateToRecurring={onNavigateToRecurring}
+            />
           )}
         </section>
 

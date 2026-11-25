@@ -13,6 +13,7 @@ import {
   Menu,
   Plus,
   Repeat,
+  Search,
   Upload,
   Users,
   X,
@@ -23,12 +24,18 @@ import { MonthlyDashboard } from './components/MonthlyDashboard';
 import { ProfileAvatar } from './components/ProfileAvatar';
 import { ProfileSelectorScreen } from './components/ProfileSelectorScreen';
 import { RecurringManager } from './components/RecurringManager';
+import {
+  DEFAULT_SEARCH_FILTERS,
+  SearchAnalysisView,
+} from './components/SearchAnalysisView';
 import { TransactionModal } from './components/TransactionModal';
 import {
   ActiveScope,
   BudgetDatabase,
   EntryType,
   RecurringItem,
+  SearchFilters,
+  SearchOrigin,
   Transaction,
   ViewMode,
 } from './types/budget';
@@ -79,6 +86,17 @@ export default function App() {
   const [selectedYear, setSelectedYear] = useState<number>(() =>
     new Date().getFullYear()
   );
+
+  // „Suche & Auswertung“: Vorbelegung, Herkunft und Rücksprungziel
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>(
+    DEFAULT_SEARCH_FILTERS
+  );
+  const [searchOrigin, setSearchOrigin] = useState<SearchOrigin>(null);
+  const [searchReturn, setSearchReturn] = useState<{
+    yearMonth: string;
+    year: number;
+  } | null>(null);
+  const [searchSession, setSearchSession] = useState<number>(0);
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [txModalOpen, setTxModalOpen] = useState<boolean>(false);
@@ -488,6 +506,30 @@ export default function App() {
     }
   };
 
+  const openSearch = (
+    filters: SearchFilters,
+    origin: SearchOrigin
+  ) => {
+    setSearchFilters(filters);
+    setSearchOrigin(origin);
+    setSearchReturn(
+      origin ? { yearMonth: selectedYearMonth, year: selectedYear } : null
+    );
+    setSearchSession((n) => n + 1);
+    setViewMode('search');
+    setMobileMenuOpen(false);
+  };
+
+  const handleBackFromSearch = () => {
+    if (searchReturn) {
+      setSelectedYearMonth(searchReturn.yearMonth);
+      setSelectedYear(searchReturn.year);
+    }
+    setViewMode(searchOrigin === 'annual' ? 'annual' : 'dashboard');
+    setSearchOrigin(null);
+    setSearchReturn(null);
+  };
+
   // Show initial profile selection directly at startup
   if (!activeScope) {
     return (
@@ -521,6 +563,7 @@ export default function App() {
     dashboard: 'Monatsübersicht',
     recurring: 'Fixkosten & Einnahmen',
     annual: 'Jahresabschluss',
+    search: 'Suche & Auswertung',
     backup: 'Sicherung & Einstellungen',
   };
 
@@ -532,6 +575,7 @@ export default function App() {
     { id: 'dashboard', label: 'Monatsübersicht', icon: LayoutDashboard },
     { id: 'recurring', label: 'Fixkosten & Einnahmen', icon: Repeat },
     { id: 'annual', label: 'Jahresabschluss', icon: BarChart3 },
+    { id: 'search', label: 'Suche & Auswertung', icon: Search },
     { id: 'backup', label: 'Sicherung & Einstellungen', icon: HardDriveDownload },
   ];
 
@@ -652,6 +696,10 @@ export default function App() {
                     key={item.id}
                     type="button"
                     onClick={() => {
+                      if (item.id === 'search') {
+                        openSearch(DEFAULT_SEARCH_FILTERS, null);
+                        return;
+                      }
                       setViewMode(item.id);
                       setMobileMenuOpen(false);
                     }}
@@ -897,6 +945,9 @@ export default function App() {
                 setTxModalOpen(true);
               }}
               onLoadSampleData={handleLoadSampleData}
+              onSearchAllMonths={(query) =>
+                openSearch({ ...DEFAULT_SEARCH_FILTERS, query }, 'monthly')
+              }
             />
           )}
 
@@ -921,6 +972,34 @@ export default function App() {
                 setSelectedYearMonth(ym);
                 setViewMode('dashboard');
               }}
+              onOpenCategory={(type, category) =>
+                openSearch(
+                  {
+                    ...DEFAULT_SEARCH_FILTERS,
+                    category,
+                    type,
+                    period: { kind: 'year', year: selectedYear },
+                  },
+                  'annual'
+                )
+              }
+            />
+          )}
+
+          {viewMode === 'search' && (
+            <SearchAnalysisView
+              key={searchSession}
+              db={db}
+              scope={effectiveScope}
+              initialFilters={searchFilters}
+              origin={searchOrigin}
+              onBack={handleBackFromSearch}
+              onEditTransaction={(tx) => {
+                setEditingTx(tx);
+                setTxModalOpen(true);
+              }}
+              onDeleteTransaction={handleDeleteTransaction}
+              onNavigateToRecurring={() => setViewMode('recurring')}
             />
           )}
 

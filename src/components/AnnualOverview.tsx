@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, ArrowUpRight } from 'lucide-react';
-import { ActiveScope, AnnualOverviewData, BudgetDatabase } from '../types/budget';
+import {
+  ActiveScope,
+  AnnualOverviewData,
+  BudgetDatabase,
+  EntryType,
+} from '../types/budget';
 import {
   MONTH_NAMES_FULL,
   MONTH_NAMES_SHORT,
@@ -17,6 +22,7 @@ interface AnnualOverviewProps {
   data: AnnualOverviewData;
   onChangeYear: (nextYear: number) => void;
   onOpenMonth: (yearMonth: string) => void;
+  onOpenCategory?: (type: EntryType, category: string) => void;
 }
 
 export const AnnualOverview: React.FC<AnnualOverviewProps> = ({
@@ -26,6 +32,7 @@ export const AnnualOverview: React.FC<AnnualOverviewProps> = ({
   data,
   onChangeYear,
   onOpenMonth,
+  onOpenCategory,
 }) => {
   const [hoveredMonthIdx, setHoveredMonthIdx] = useState<number | null>(null);
 
@@ -452,28 +459,53 @@ export const AnnualOverview: React.FC<AnnualOverviewProps> = ({
               Für {year} liegen noch keine Ausgaben vor.
             </p>
           ) : (
-            <div className="mt-5 space-y-4">
-              {data.expenseByCategory.map((cat) => (
-                <div key={cat.category}>
-                  <div className="flex items-baseline justify-between gap-2 text-xs">
-                    <span className="font-medium text-[#3D322C] truncate">
-                      {cat.category}
-                    </span>
-                    <span className="font-mono tabular-nums text-[#3D322C] shrink-0">
-                      {formatCurrency(cat.amount)} ·{' '}
-                      <span className="text-[#8C7D72]">
-                        {formatPercent(cat.percentage)}
+            <div
+              className={`mt-5 ${onOpenCategory ? 'space-y-2' : 'space-y-4'}`}
+            >
+              {data.expenseByCategory.map((cat) => {
+                const content = (
+                  <>
+                    <div className="flex items-baseline justify-between gap-2 text-xs">
+                      <span className="font-medium text-[#3D322C] truncate">
+                        {cat.category}
                       </span>
-                    </span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 w-full bg-[#EFEAE0] rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-[#4A3B32] rounded-full transition-all duration-300"
-                      style={{ width: `${Math.min(100, cat.percentage)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                      <span className="inline-flex items-center gap-1 font-mono tabular-nums text-[#3D322C] shrink-0">
+                        <span>
+                          {formatCurrency(cat.amount)} ·{' '}
+                          <span className="text-[#8C7D72]">
+                            {formatPercent(cat.percentage)}
+                          </span>
+                        </span>
+                        {onOpenCategory && (
+                          <ChevronRight
+                            className="w-3.5 h-3.5 text-[#C2B8A8] group-hover:text-[#3D322C] transition-colors"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full bg-[#EFEAE0] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#4A3B32] rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(100, cat.percentage)}%` }}
+                      />
+                    </div>
+                  </>
+                );
+                return onOpenCategory ? (
+                  <button
+                    key={cat.category}
+                    type="button"
+                    onClick={() => onOpenCategory('expense', cat.category)}
+                    title={`Alle Ausgaben-Buchungen „${cat.category}“ in ${year} anzeigen`}
+                    className="group block w-[calc(100%+1rem)] text-left -mx-2 px-2 py-1 rounded-lg cursor-pointer hover:bg-[#F5F2EB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3D322C]/40 transition-colors"
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <div key={cat.category}>{content}</div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -494,28 +526,53 @@ export const AnnualOverview: React.FC<AnnualOverviewProps> = ({
               Für {year} liegen noch keine Einnahmen vor.
             </p>
           ) : (
-            <div className="mt-5 space-y-4">
-              {data.incomeByCategory.map((cat) => (
-                <div key={cat.category}>
-                  <div className="flex items-baseline justify-between gap-2 text-xs">
-                    <span className="font-medium text-[#3D322C] truncate">
-                      {cat.category}
-                    </span>
-                    <span className="font-mono tabular-nums text-[#2A6F4E] shrink-0">
-                      {formatCurrency(cat.amount, true)} ·{' '}
-                      <span className="text-[#8C7D72]">
-                        {formatPercent(cat.percentage)}
+            <div
+              className={`mt-5 ${onOpenCategory ? 'space-y-2' : 'space-y-4'}`}
+            >
+              {data.incomeByCategory.map((cat) => {
+                const content = (
+                  <>
+                    <div className="flex items-baseline justify-between gap-2 text-xs">
+                      <span className="font-medium text-[#3D322C] truncate">
+                        {cat.category}
                       </span>
-                    </span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 w-full bg-[#EFEAE0] rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-[#2A6F4E] rounded-full transition-all duration-300"
-                      style={{ width: `${Math.min(100, cat.percentage)}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                      <span className="inline-flex items-center gap-1 font-mono tabular-nums text-[#2A6F4E] shrink-0">
+                        <span>
+                          {formatCurrency(cat.amount, true)} ·{' '}
+                          <span className="text-[#8C7D72]">
+                            {formatPercent(cat.percentage)}
+                          </span>
+                        </span>
+                        {onOpenCategory && (
+                          <ChevronRight
+                            className="w-3.5 h-3.5 text-[#C2B8A8] group-hover:text-[#3D322C] transition-colors"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-1.5 w-full bg-[#EFEAE0] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#2A6F4E] rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(100, cat.percentage)}%` }}
+                      />
+                    </div>
+                  </>
+                );
+                return onOpenCategory ? (
+                  <button
+                    key={cat.category}
+                    type="button"
+                    onClick={() => onOpenCategory('income', cat.category)}
+                    title={`Alle Einnahmen-Buchungen „${cat.category}“ in ${year} anzeigen`}
+                    className="group block w-[calc(100%+1rem)] text-left -mx-2 px-2 py-1 rounded-lg cursor-pointer hover:bg-[#F5F2EB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3D322C]/40 transition-colors"
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <div key={cat.category}>{content}</div>
+                );
+              })}
             </div>
           )}
         </section>
