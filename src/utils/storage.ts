@@ -6,6 +6,14 @@ import {
 } from '../types/budget';
 import { computeAnnualOverview, computeMonthlySummary } from './calculations';
 import { createId, getCurrentYearMonth, toYearMonth } from './format';
+import {
+  IDB_KEY_AVATARS,
+  IDB_KEY_BUDGET,
+  idbGet,
+  idbRemove,
+  idbSelfTest,
+  idbSet,
+} from './idbStorage';
 
 export const STORAGE_KEY = 'vto_budget_v1';
 export const AVATARS_STORAGE_KEY = 'vto_profile_avatars_v1';
@@ -131,53 +139,52 @@ function isValidAvatarDataUrl(val: unknown): val is string {
   );
 }
 
+function normalizeAvatarMap(parsed: unknown): Record<string, string> {
+  if (!parsed || typeof parsed !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+    const mappedId = migrateLegacyProfileId(key);
+    if (mappedId && isValidAvatarDataUrl(value)) {
+      out[mappedId] = value;
+    }
+  }
+  return out;
+}
+
+function hasLocalStorage(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage !== null;
+  } catch {
+    return false;
+  }
+}
+
+function readLocalStorage(key: string): string | null {
+  try {
+    return hasLocalStorage() ? localStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function loadLocalAvatars(): Record<string, string> {
   try {
-    const raw = localStorage.getItem(AVATARS_STORAGE_KEY);
+    const raw = readLocalStorage(AVATARS_STORAGE_KEY);
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object') return {};
-    const out: Record<string, string> = {};
-    for (const [key, value] of Object.entries(
-      parsed as Record<string, unknown>
-    )) {
-      const mappedId = migrateLegacyProfileId(key);
-      if (mappedId && isValidAvatarDataUrl(value)) {
-        out[mappedId] = value;
-      }
-    }
-    return out;
+    return normalizeAvatarMap(JSON.parse(raw) as unknown);
   } catch {
     return {};
   }
 }
 
-export function saveLocalAvatars(avatars: Record<string, string>): void {
-  const clean: Record<string, string> = {};
-  for (const [key, value] of Object.entries(avatars)) {
-    if (key.trim() && isValidAvatarDataUrl(value)) {
-      clean[key] = value;
+function buildAvatarMap(profiles: UserProfile[]): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const p of profiles) {
+    if (p.id.trim() && isValidAvatarDataUrl(p.avatarUrl)) {
+      next[p.id] = p.avatarUrl;
     }
   }
-  try {
-    localStorage.setItem(AVATARS_STORAGE_KEY, JSON.stringify(clean));
-  } catch {
-    // Storage quota exceeded or private mode
-  }
-}
-
-export function saveLocalAvatar(
-  profileId: string,
-  avatarUrl?: string
-): Record<string, string> {
-  const current = loadLocalAvatars();
-  if (avatarUrl && isValidAvatarDataUrl(avatarUrl)) {
-    current[profileId] = avatarUrl;
-  } else {
-    delete current[profileId];
-  }
-  saveLocalAvatars(current);
-  return current;
+  return next;
 }
 
 export function mergeLocalAvatars(
@@ -204,83 +211,328 @@ function normalizeProfilesForPersistence(profiles: UserProfile[]): UserProfile[]
   }));
 }
 
-export function syncLocalAvatarsFromProfiles(profiles: UserProfile[]): void {
-  const next: Record<string, string> = {};
-  for (const p of profiles) {
-    if (p.id.trim() && isValidAvatarDataUrl(p.avatarUrl)) {
-      next[p.id] = p.avatarUrl;
-    }
-  }
-  saveLocalAvatars(next);
+/**
+ * Setzt den Zeitstempel und normalisiert die Profile, so wie es früher
+ * beim Speichern passierte – ohne selbst etwas zu schreiben.
+ */
+export function prepareDatabaseForSave(db: BudgetDatabase): BudgetDatabase {
+  return {
+    ...db,
+    profiles: normalizeProfilesForPersistence(db.profiles),
+    updatedAt: new Date().toISOString(),
+  };
 }
 
+function withAvatars(
+  base: BudgetDatabase,
+  avatars: Record<string, string>
+): BudgetDatabase {
+  return { ...base, profiles: mergeLocalAvatars(base.profiles, avatars) };
+}
+
+/** Lädt den Bestand synchron aus localStorage (Fallback-Backend). */
 export function loadDatabase(): BudgetDatabase {
   const localAvatars = loadLocalAvatars();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      const initial = createInitialDatabase();
-      return {
-        ...initial,
-        profiles: mergeLocalAvatars(initial.profiles, localAvatars),
-      };
-    }
-    const parsed = JSON.parse(raw) as unknown;
-    const validated = validateAndNormalizeDatabase(parsed);
-    const base = validated ?? createInitialDatabase();
-    return {
-      ...base,
-      profiles: mergeLocalAvatars(base.profiles, localAvatars),
-    };
+    const raw = readLocalStorage(STORAGE_KEY);
+    if (!raw) return withAvatars(createInitialDatabase(), localAvatars);
+    const validated = validateAndNormalizeDatabase(JSON.parse(raw) as unknown);
+    return withAvatars(validated ?? createInitialDatabase(), localAvatars);
   } catch {
-    const initial = createInitialDatabase();
-    return {
-      ...initial,
-      profiles: mergeLocalAvatars(initial.profiles, localAvatars),
-    };
+    return withAvatars(createInitialDatabase(), localAvatars);
   }
 }
 
-export function saveDatabase(db: BudgetDatabase): BudgetDatabase {
-  const updatedAt = new Date().toISOString();
-  const normalizedProfiles = normalizeProfilesForPersistence(db.profiles);
+// ---------------------------------------------------------------------------
+// Persistenz-Backend (IndexedDB bevorzugt, localStorage als Fallback)
+// ---------------------------------------------------------------------------
+
+export type StorageBackend = 'indexeddb' | 'localstorage';
+
+let activeBackend: StorageBackend = 'localstorage';
+
+export function getActiveStorageBackend(): StorageBackend {
+  return activeBackend;
+}
+
+export interface StorageInitResult {
+  db: BudgetDatabase;
+  backend: StorageBackend;
+  /** true, wenn alte localStorage-Daten in diesem Start nach IndexedDB übernommen wurden. */
+  migrated: boolean;
+}
+
+function sameStoredValue(a: unknown, b: unknown): boolean {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
+function sameCounts(a: BudgetDatabase | null, b: BudgetDatabase | null): boolean {
+  return (
+    !!a &&
+    !!b &&
+    a.profiles.length === b.profiles.length &&
+    a.transactions.length === b.transactions.length &&
+    a.recurringItems.length === b.recurringItems.length
+  );
+}
+
+/**
+ * Lädt aus IndexedDB und übernimmt bei Bedarf alte localStorage-Daten.
+ * Wirft, wenn IndexedDB nicht zuverlässig nutzbar ist bzw. die Migration
+ * nicht verifiziert werden konnte – dann bleibt localStorage unangetastet.
+ */
+async function loadFromIndexedDb(): Promise<StorageInitResult> {
+  let storedBudget = await idbGet<unknown>(IDB_KEY_BUDGET);
+  let storedAvatars = await idbGet<unknown>(IDB_KEY_AVATARS);
+  const lsBudgetRaw = readLocalStorage(STORAGE_KEY);
+  const lsAvatarsRaw = readLocalStorage(AVATARS_STORAGE_KEY);
+
+  const writtenKeys: string[] = [];
+  const lsKeysToRemove: string[] = [];
+
+  try {
+    if (storedBudget === undefined && lsBudgetRaw) {
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(lsBudgetRaw) as unknown;
+      } catch {
+        parsed = null; // unlesbar: nicht migrieren, nichts löschen
+      }
+      const source = validateAndNormalizeDatabase(parsed);
+      if (source) {
+        await idbSet(IDB_KEY_BUDGET, parsed);
+        writtenKeys.push(IDB_KEY_BUDGET);
+        const back = await idbGet<unknown>(IDB_KEY_BUDGET);
+        if (
+          !sameStoredValue(parsed, back) ||
+          !sameCounts(source, validateAndNormalizeDatabase(back))
+        ) {
+          throw new Error('Migration: Rücklesen der Buchungen stimmt nicht überein.');
+        }
+        storedBudget = back;
+        lsKeysToRemove.push(STORAGE_KEY);
+      }
+    }
+
+    if (storedAvatars === undefined && lsAvatarsRaw) {
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(lsAvatarsRaw) as unknown;
+      } catch {
+        parsed = null;
+      }
+      if (parsed && typeof parsed === 'object') {
+        await idbSet(IDB_KEY_AVATARS, parsed);
+        writtenKeys.push(IDB_KEY_AVATARS);
+        const back = await idbGet<unknown>(IDB_KEY_AVATARS);
+        if (!sameStoredValue(parsed, back)) {
+          throw new Error('Migration: Rücklesen der Profilbilder stimmt nicht überein.');
+        }
+        storedAvatars = back;
+        lsKeysToRemove.push(AVATARS_STORAGE_KEY);
+      }
+    }
+  } catch (err) {
+    // Halb migrierte Einträge zurücknehmen, damit beim nächsten Start
+    // wieder localStorage maßgeblich ist.
+    for (const key of writtenKeys) {
+      await idbRemove(key).catch(() => undefined);
+    }
+    throw err;
+  }
+
+  // Erst nach erfolgreicher Verifikation die alten Einträge entfernen.
+  for (const key of lsKeysToRemove) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Bleibt liegen; IndexedDB ist trotzdem maßgeblich.
+    }
+  }
+
+  const base =
+    storedBudget === undefined
+      ? createInitialDatabase()
+      : validateAndNormalizeDatabase(storedBudget) ?? createInitialDatabase();
+  return {
+    db: withAvatars(base, normalizeAvatarMap(storedAvatars)),
+    backend: 'indexeddb',
+    migrated: lsKeysToRemove.length > 0,
+  };
+}
+
+/**
+ * Wählt beim Start das Backend und lädt den Bestand. Wirft nie: im
+ * Zweifel wird wie bisher localStorage verwendet.
+ */
+export async function initStorage(): Promise<StorageInitResult> {
+  try {
+    if (await idbSelfTest()) {
+      const result = await loadFromIndexedDb();
+      activeBackend = 'indexeddb';
+      return result;
+    }
+  } catch {
+    // IndexedDB unbrauchbar oder Migration nicht verifiziert → Fallback
+  }
+  activeBackend = 'localstorage';
+  return { db: loadDatabase(), backend: 'localstorage', migrated: false };
+}
+
+async function writeToActiveBackend(payload: BudgetDatabase): Promise<void> {
+  const avatars = buildAvatarMap(payload.profiles);
+  if (activeBackend === 'indexeddb') {
+    await idbSet(IDB_KEY_BUDGET, payload);
+    await idbSet(IDB_KEY_AVATARS, avatars);
+    return;
+  }
+  // Wirft bei vollem Speicher/privatem Modus; alter Stand bleibt dann erhalten.
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  localStorage.setItem(AVATARS_STORAGE_KEY, JSON.stringify(avatars));
+}
+
+async function readBudgetFromActiveBackend(): Promise<unknown> {
+  if (activeBackend === 'indexeddb') {
+    return await idbGet<unknown>(IDB_KEY_BUDGET);
+  }
+  const raw = localStorage.getItem(STORAGE_KEY);
+  return raw ? (JSON.parse(raw) as unknown) : undefined;
+}
+
+/**
+ * Schreibt den Stand ins aktive Backend (ohne neuen Zeitstempel).
+ * Wirft bei Fehlschlag.
+ */
+export async function persistDatabase(db: BudgetDatabase): Promise<BudgetDatabase> {
   const payload: BudgetDatabase = {
     ...db,
-    profiles: normalizedProfiles,
-    updatedAt,
+    profiles: normalizeProfilesForPersistence(db.profiles),
   };
-  syncLocalAvatarsFromProfiles(normalizedProfiles);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // Storage quota exceeded or private mode; state remains in memory
-  }
+  await writeToActiveBackend(payload);
   return payload;
 }
 
 /**
- * Like saveDatabase, but reports whether the data was actually written to
- * localStorage (e.g. false when the storage quota is exceeded). On failure
- * the previously stored data remains untouched.
+ * Schreibt einen neuen Gesamtbestand (z. B. Import) ins aktive Backend und
+ * prüft per Rücklesen, dass er vollständig angekommen ist. Bei
+ * persisted=false soll der App-State NICHT ersetzt werden.
  */
-export function saveDatabaseChecked(db: BudgetDatabase): {
+export async function saveDatabaseVerified(db: BudgetDatabase): Promise<{
   db: BudgetDatabase;
   persisted: boolean;
-} {
-  const updatedAt = new Date().toISOString();
-  const normalizedProfiles = normalizeProfilesForPersistence(db.profiles);
-  const payload: BudgetDatabase = {
-    ...db,
-    profiles: normalizedProfiles,
-    updatedAt,
-  };
+}> {
+  const payload = prepareDatabaseForSave(db);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    await writeToActiveBackend(payload);
+    const back = validateAndNormalizeDatabase(await readBudgetFromActiveBackend());
+    const persisted =
+      sameCounts(payload, back) && back?.updatedAt === payload.updatedAt;
+    return { db: payload, persisted };
   } catch {
     return { db: payload, persisted: false };
   }
-  syncLocalAvatarsFromProfiles(normalizedProfiles);
-  return { db: payload, persisted: true };
+}
+
+let persistRequested = false;
+
+/** Bittet den Browser einmalig, den Speicher nicht automatisch zu räumen. */
+export function requestPersistentStorage(): void {
+  if (persistRequested) return;
+  persistRequested = true;
+  try {
+    const nav = typeof navigator !== 'undefined' ? navigator : undefined;
+    const result = nav?.storage?.persist?.();
+    if (result && typeof result.catch === 'function') {
+      result.catch(() => undefined);
+    }
+  } catch {
+    // ignorieren
+  }
+}
+
+export interface PersistScheduler {
+  /** Autosave erst nach abgeschlossenem Laden freigeben. */
+  enable(): void;
+  isEnabled(): boolean;
+  /** Entprellt speichern (letzter Stand gewinnt). */
+  schedule(db: BudgetDatabase): void;
+  /** Ausstehenden Stand sofort speichern; wartet auf alle laufenden Writes. */
+  flush(): Promise<void>;
+  /** Ausstehenden (noch nicht begonnenen) Stand verwerfen. */
+  discardPending(): void;
+  /** Exklusive Aktion in der Schreib-Warteschlange (nach ausstehenden Writes). */
+  runExclusive<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+export function createPersistScheduler(options: {
+  delayMs?: number;
+  write?: (db: BudgetDatabase) => Promise<unknown>;
+  onSuccess?: () => void;
+  onError?: (err: unknown) => void;
+} = {}): PersistScheduler {
+  const delayMs = options.delayMs ?? 400;
+  const write = options.write ?? persistDatabase;
+  let enabled = false;
+  let pending: BudgetDatabase | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let chain: Promise<void> = Promise.resolve();
+
+  const clearTimer = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  const flush = (): Promise<void> => {
+    clearTimer();
+    if (!enabled || !pending) return chain;
+    const snapshot = pending;
+    pending = null;
+    chain = chain
+      .then(() => write(snapshot))
+      .then(
+        () => options.onSuccess?.(),
+        (err: unknown) => options.onError?.(err)
+      );
+    return chain;
+  };
+
+  return {
+    enable() {
+      enabled = true;
+    },
+    isEnabled() {
+      return enabled;
+    },
+    schedule(db) {
+      if (!enabled) return;
+      pending = db;
+      clearTimer();
+      timer = setTimeout(() => {
+        timer = null;
+        void flush();
+      }, delayMs);
+    },
+    flush,
+    discardPending() {
+      clearTimer();
+      pending = null;
+    },
+    runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+      void flush();
+      const result = chain.then(fn);
+      chain = result.then(
+        () => undefined,
+        () => undefined
+      );
+      return result;
+    },
+  };
 }
 
 export function validateAndNormalizeDatabase(

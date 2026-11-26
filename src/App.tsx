@@ -67,15 +67,34 @@ import {
   FIXED_INCOME_CATEGORIES,
   buildSampleDatabase,
   createInitialDatabase,
-  loadDatabase,
-  saveDatabase,
-  saveDatabaseChecked,
-  saveLocalAvatar,
+  createPersistScheduler,
+  initStorage,
+  prepareDatabaseForSave,
+  requestPersistentStorage,
+  saveDatabaseVerified,
   validateAndNormalizeDatabase,
 } from './utils/storage';
 
+const IMPORT_NOT_PERSISTED_MESSAGE =
+  'Der Import konnte nicht im Browser gespeichert werden (Speicher voll oder privater Modus). Ihre bisherigen Daten sind unverändert.';
+
 export default function App() {
-  const [db, setDb] = useState<BudgetDatabase>(() => loadDatabase());
+  // Platzhalter bis das asynchrone Laden abgeschlossen ist (wird nicht angezeigt)
+  const [db, setDb] = useState<BudgetDatabase>(() => createInitialDatabase());
+  const [storageReady, setStorageReady] = useState<boolean>(false);
+  const [saveFailed, setSaveFailed] = useState<boolean>(false);
+  // Stand, der bereits gespeichert ist bzw. gerade geladen wurde (kein Autosave nötig)
+  const skipAutosaveRef = useRef<BudgetDatabase | null>(null);
+  const [persistScheduler] = useState(() =>
+    createPersistScheduler({
+      delayMs: 400,
+      onSuccess: () => {
+        setSaveFailed(false);
+        requestPersistentStorage();
+      },
+      onError: () => setSaveFailed(true),
+    })
+  );
   // Always start on the profile selection screen
   const [activeScope, setActiveScope] = useState<ActiveScope | null>(null);
 
@@ -127,11 +146,71 @@ export default function App() {
     });
   }, []);
 
+  // Asynchrones Laden beim Start; Autosave wird erst danach freigegeben
+  useEffect(() => {
+    let cancelled = false;
+    void initStorage().then((result) => {
+      if (cancelled) return;
+      skipAutosaveRef.current = result.db;
+      setDb(result.db);
+      persistScheduler.enable();
+      setStorageReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [persistScheduler]);
+
+  // Autosave: entprellt und seriell, niemals vor Abschluss des Ladens
+  useEffect(() => {
+    if (!storageReady) return;
+    if (db === skipAutosaveRef.current) return;
+    persistScheduler.schedule(db);
+  }, [db, storageReady, persistScheduler]);
+
+  // iOS beendet Tabs abrupt: beim Verlassen sofort speichern
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        void persistScheduler.flush();
+      }
+    };
+    const handlePageHide = () => {
+      void persistScheduler.flush();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [persistScheduler]);
+
   const commitDb = (updater: (prev: BudgetDatabase) => BudgetDatabase) => {
     setDb((prev) => {
       const next = updater(prev);
-      return saveDatabase(next);
+      return next === prev ? prev : prepareDatabaseForSave(next);
     });
+  };
+
+  /**
+   * Neuen Gesamtbestand erst ins aktive Backend schreiben und per Rücklesen
+   * prüfen; nur dann den App-State ersetzen. null = nicht gespeichert.
+   */
+  const persistReplacement = async (
+    nextDb: BudgetDatabase
+  ): Promise<BudgetDatabase | null> => {
+    const { db: saved, persisted } = await persistScheduler.runExclusive(() =>
+      saveDatabaseVerified(nextDb)
+    );
+    if (!persisted) return null;
+    // Während des Imports entstandene Autosaves basieren auf dem alten Stand
+    persistScheduler.discardPending();
+    skipAutosaveRef.current = saved;
+    setDb(saved);
+    setSaveFailed(false);
+    requestPersistentStorage();
+    return saved;
   };
 
   useEffect(() => {
@@ -167,7 +246,6 @@ export default function App() {
   };
 
   const handleUpdateProfileAvatar = (profileId: string, avatarUrl?: string) => {
-    saveLocalAvatar(profileId, avatarUrl);
     commitDb((prev) => ({
       ...prev,
       profiles: prev.profiles.map((p) => {
@@ -429,9 +507,11 @@ export default function App() {
     }));
   };
 
-  const handleImportDatabase = (nextDb: BudgetDatabase) => {
-    const saved = saveDatabase(nextDb);
-    setDb(saved);
+  const handleImportDatabase = async (
+    nextDb: BudgetDatabase
+  ): Promise<boolean> => {
+    const saved = await persistReplacement(nextDb);
+    return saved !== null;
   };
 
   // Money Control CSV import: persist locally first, then mirror to the linked folder
@@ -443,11 +523,10 @@ export default function App() {
     | { status: 'synced'; folderName: string }
     | { status: 'sync-failed'; message: string }
   > => {
-    const { db: saved, persisted } = saveDatabaseChecked(nextDb);
-    if (!persisted) {
+    const saved = await persistReplacement(nextDb);
+    if (!saved) {
       return { status: 'not-persisted' };
     }
-    setDb(saved);
     if (!pcloudDirHandle) {
       return { status: 'local-only' };
     }
@@ -472,8 +551,7 @@ export default function App() {
   };
 
   const handleResetDatabase = () => {
-    const saved = saveDatabase(createInitialDatabase());
-    setDb(saved);
+    commitDb(() => createInitialDatabase());
   };
 
   const effectiveScope: ActiveScope = activeScope ?? 'joint';
@@ -530,9 +608,32 @@ export default function App() {
     setSearchReturn(null);
   };
 
+  const saveWarning = saveFailed ? (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100%-2rem)] px-4 py-2 rounded-xl bg-[#FCFBF8] border border-[#E5DFD3] shadow-sm text-xs font-medium text-[#B43C2E]"
+    >
+      Speichern fehlgeschlagen – bitte Daten sichern
+    </div>
+  ) : null;
+
+  // Bis das Laden abgeschlossen ist: schlichter Ladehinweis
+  if (!storageReady) {
+    return (
+      <div className="min-h-screen bg-[#F5F2EB] text-[#3D322C] flex items-center justify-center px-6">
+        <p className="text-sm text-[#6E6056]" role="status" aria-live="polite">
+          Lade Daten …
+        </p>
+      </div>
+    );
+  }
+
   // Show initial profile selection directly at startup
   if (!activeScope) {
     return (
+      <>
+      {saveWarning}
       <ProfileSelectorScreen
         db={db}
         pcloudFolderName={pcloudDirHandle?.name ?? null}
@@ -546,6 +647,7 @@ export default function App() {
         onDirectSave={handleDirectSaveToPcloud}
         onDirectLoad={handleDirectLoadFromPcloud}
       />
+      </>
     );
   }
 
@@ -1106,9 +1208,15 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    handleImportDatabase(sidebarImportPending.db);
+                    const pending = sidebarImportPending;
                     setSidebarImportPending(null);
-                    setMobileMenuOpen(false);
+                    void handleImportDatabase(pending.db).then((ok) => {
+                      if (ok) {
+                        setMobileMenuOpen(false);
+                      } else {
+                        setSidebarImportError(IMPORT_NOT_PERSISTED_MESSAGE);
+                      }
+                    });
                   }}
                   className="px-4 py-2 text-sm font-medium text-[#FCFBF8] bg-[#3D322C] rounded-xl hover:bg-[#2E2520] transition-colors"
                 >
@@ -1119,6 +1227,7 @@ export default function App() {
           </div>
         </div>
       )}
+      {saveWarning}
     </div>
   );
 }

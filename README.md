@@ -14,7 +14,7 @@ Bei Finanzdaten steht die Privatsphäre an erster Stelle. Diese Anwendung basier
    - Es gibt kein Backend, keine Datenbank auf fremden Servern und keine Cloud-Anbindung.
    - Es werden **keinerlei Finanzdaten, persönliche Angaben oder Datenströme** an Dritte oder externe Server übertragen.
 
-2. **Lokale Datenspeicherung (`localStorage`):**
+2. **Lokale Datenspeicherung im Browser-Speicher (IndexedDB):**
    - Alle erfassten Buchungen, Fixkosten und Einstellungen verbleiben ausschließlich im Speicher des Browsers auf Deinem Endgerät.
 
 3. **Höchste Datenhoheit via JSON-Import/Export:**
@@ -73,6 +73,7 @@ Hinweis: Node.js 20.19 oder neuer erforderlich.
 
 ## 🗓️ Änderungen
 
+* **26.11.2026** – Speicher auf IndexedDB umgestellt: große Datenbestände (z. B. aus dem Money-Control-Import) funktionieren jetzt auch auf iPhone und iPad; vorhandene Daten werden automatisch übernommen.
 * **25.11.2026** – Ausgaben-Beträge werden in den Buchungslisten rot dargestellt, Einnahmen grün.
 * **25.11.2026** – Neue Ansicht „Suche & Auswertung“ mit Klick auf Kategorien im Jahresabschluss.
 * **25.11.2026** – Import von Money-Control-CSV-Dateien mit Wahl des Zielprofils.

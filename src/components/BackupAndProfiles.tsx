@@ -41,7 +41,8 @@ interface BackupAndProfilesProps {
   onUpdateProfileAvatar: (profileId: string, avatarUrl?: string) => void;
   onAddCategory: (type: EntryType, name: string) => void;
   onRemoveCategory: (type: EntryType, name: string) => void;
-  onImportDatabase: (nextDb: BudgetDatabase) => void;
+  /** Liefert false, wenn der Bestand nicht im Browser gespeichert werden konnte. */
+  onImportDatabase: (nextDb: BudgetDatabase) => Promise<boolean>;
   onLoadSampleData: () => void;
   onResetDatabase: () => void;
 }
@@ -177,11 +178,17 @@ export const BackupAndProfiles: React.FC<BackupAndProfilesProps> = ({
     }
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (!pendingImportDb) return;
-    onImportDatabase(pendingImportDb);
+    const persisted = await onImportDatabase(pendingImportDb);
     setPendingImportDb(null);
     setImportFileName('');
+    if (!persisted) {
+      setImportError(
+        'Der Import konnte nicht im Browser gespeichert werden (Speicher voll oder privater Modus). Ihre bisherigen Daten sind unverändert.'
+      );
+      return;
+    }
     setImportSuccess(
       'Datenbestand erfolgreich geladen und im Browser gespeichert.'
     );

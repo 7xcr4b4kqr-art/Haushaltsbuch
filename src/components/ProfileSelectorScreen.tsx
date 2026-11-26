@@ -32,6 +32,9 @@ import {
 import { MoneyControlImportDialog } from './MoneyControlImportDialog';
 import { ProfileAvatar } from './ProfileAvatar';
 
+const IMPORT_NOT_PERSISTED_MESSAGE =
+  'Der Import konnte nicht im Browser gespeichert werden (Speicher voll oder privater Modus). Ihre bisherigen Daten sind unverändert.';
+
 export type MoneyControlImportOutcome =
   | { status: 'not-persisted' }
   | { status: 'local-only' }
@@ -42,7 +45,8 @@ interface ProfileSelectorScreenProps {
   db: BudgetDatabase;
   pcloudFolderName: string | null;
   onSelectScope: (scope: ActiveScope) => void;
-  onImportDatabase: (nextDb: BudgetDatabase) => void;
+  /** Liefert false, wenn der Bestand nicht im Browser gespeichert werden konnte. */
+  onImportDatabase: (nextDb: BudgetDatabase) => Promise<boolean>;
   onImportMoneyControl: (
     nextDb: BudgetDatabase
   ) => Promise<MoneyControlImportOutcome>;
@@ -126,7 +130,11 @@ export const ProfileSelectorScreen: React.FC<ProfileSelectorScreenProps> = ({
     if (pcloudFolderName) {
       const res = await onDirectLoad();
       if (res.status === 'loaded') {
-        onImportDatabase(res.db);
+        const persisted = await onImportDatabase(res.db);
+        if (!persisted) {
+          setImportError(IMPORT_NOT_PERSISTED_MESSAGE);
+          return;
+        }
         onSelectScope('joint');
         return;
       }
@@ -203,9 +211,7 @@ export const ProfileSelectorScreen: React.FC<ProfileSelectorScreenProps> = ({
     try {
       const outcome = await onImportMoneyControl(nextDb);
       if (outcome.status === 'not-persisted') {
-        setCsvDialogError(
-          'Der Import konnte nicht im Browser gespeichert werden (Speicher voll oder privater Modus). Ihre bisherigen Daten sind unverändert.'
-        );
+        setCsvDialogError(IMPORT_NOT_PERSISTED_MESSAGE);
         return;
       }
       const total = affected.reduce((sum, a) => sum + a.newTransactions, 0);
@@ -263,7 +269,11 @@ export const ProfileSelectorScreen: React.FC<ProfileSelectorScreenProps> = ({
         );
         return;
       }
-      onImportDatabase(validated);
+      const persisted = await onImportDatabase(validated);
+      if (!persisted) {
+        setImportError(IMPORT_NOT_PERSISTED_MESSAGE);
+        return;
+      }
       onSelectScope('joint');
     } catch {
       setImportError('Die JSON-Datei konnte nicht gelesen werden.');
